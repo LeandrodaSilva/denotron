@@ -208,12 +208,17 @@ export class Webview {
     instances.push(this);
 
     lib.symbols.webview_init(this.#handle, encodeCString(injected));
-    
+
     this.bind("denotronLog", (...args: any) => console.log(...args));
-    
-    this.bind("denotronLoaded",   () => {
+
+    this.bind("denotronLoaded", () => {
       console.log("Webview loaded, executing commands...");
-      lib.symbols.webview_eval(this.#handle, encodeCString(`window.receiveMessage(${JSON.stringify(this.#commands)});`));
+      lib.symbols.webview_eval(
+        this.#handle,
+        encodeCString(
+          `window.receiveMessage(${JSON.stringify(this.#commands)});`,
+        ),
+      );
     });
   }
 

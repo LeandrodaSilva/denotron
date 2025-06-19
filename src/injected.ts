@@ -94,6 +94,6 @@ window.denotronSee = (selector) => {
     }
   }
 }
-`
+`;
 
 export default injected;
