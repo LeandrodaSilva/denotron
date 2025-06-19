@@ -1,5 +1,5 @@
-import { Webview } from "../mod.ts";
+import { Denotron } from "../mod.ts";
 
-const webview = new Webview();
+const webview = new Denotron();
 webview.navigate("https://deno.land/");
 webview.run();

@@ -1,5 +1,5 @@
 {
-  "name": "@leproj/webview",
+  "name": "@leproj/denotron",
   "version": "0.2.0",
   "exports": "./mod.ts",
   "lock": false,

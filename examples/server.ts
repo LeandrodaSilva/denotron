@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.157.0/http/server.ts";
-import { Webview } from "../mod.ts";
+import { Denotron } from "../mod.ts";
 
 const controller = new AbortController();
 const server = serve(() =>
@@ -9,7 +9,7 @@ const server = serve(() =>
     }),
   }), { port: 8080, signal: controller.signal });
 
-const webview = new Webview();
+const webview = new Denotron();
 
 webview.navigate(`http://localhost:8080`);
 

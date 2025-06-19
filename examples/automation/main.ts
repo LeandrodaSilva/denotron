@@ -1,23 +1,15 @@
-import { SizeHint, Webview } from "../../mod.ts";
+import { Denotron, SizeHint } from "../../mod.ts";
 
-const webview = new Webview(false, {
+const denotron = new Denotron(false, {
   width: 1024,
   height: 768,
   hint: SizeHint.FIXED,
 });
 
-webview.navigate("https://dev.matriculadigital.seb.com.br");
+denotron.navigate("https://deno.com/");
 
-webview.see("#cpf");
+denotron.see("#search-str");
 
-webview.fill("#cpf", "40265693810");
+denotron.fill("#search-str", "denotron");
 
-webview.see("#senha");
-
-webview.fill("#senha", "123");
-
-webview.see("#btnLogin");
-
-webview.click("#btnLogin");
-
-webview.run();
+denotron.run();

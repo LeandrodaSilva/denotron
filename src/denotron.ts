@@ -60,7 +60,7 @@ export interface Size {
  * webview.run();
  * ```
  */
-export class Webview {
+export class Denotron {
   #handle: Deno.PointerValue = null;
   #callbacks: Map<
     string,
@@ -259,7 +259,7 @@ export class Webview {
   /**
    * Binds a callback so that it will appear in the webview with the given name
    * as a global async JavaScript function. Callback receives a seq and req value.
-   * The seq parameter is an identifier for using {@link Webview.return} to
+   * The seq parameter is an identifier for using {@link Denotron.return} to
    * return a value while the req parameter is a string of an JSON array representing
    * the arguments passed from the JavaScript function call.
    *
@@ -393,7 +393,7 @@ export class Webview {
   /**
    * Returns a value to the webview JavaScript environment.
    *
-   * @param seq The request pointer as provided by the {@link Webview.bindRaw}
+   * @param seq The request pointer as provided by the {@link Denotron.bindRaw}
    * callback
    * @param status If status is zero the result is expected to be a valid JSON
    * result value otherwise the result is an error JSON object

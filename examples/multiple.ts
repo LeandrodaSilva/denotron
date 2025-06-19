@@ -1,9 +1,9 @@
-import { Webview } from "../mod.ts";
+import { Denotron } from "../mod.ts";
 
-const webview1 = new Webview();
+const webview1 = new Denotron();
 webview1.navigate("https://deno.land/");
 
-const webview2 = new Webview();
+const webview2 = new Denotron();
 webview2.navigate("https://google.com/");
 
 // NOTE: Due to design limitations, you can only have one webview

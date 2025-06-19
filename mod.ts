@@ -1,27 +1,19 @@
 /**
- * Webview is a tiny cross-platform library to make web-based GUIs for desktop
+ * Denotron is a tiny cross-platform library to make web-based  automation GUIs for desktop
  * applications.
  *
  * @example
  * ```
- * import { Webview } from "@webview/webview";
+ * import { Denotron } from "@leproj/denotron";
  *
- * const html = `
- *   <html>
- *   <body>
- *     <h1>Hello from deno v${Deno.version.deno}</h1>
- *   </body>
- *   </html>
- * `;
+ * const denotron = new Denotron();
  *
- * const webview = new Webview();
- *
- * webview.navigate(`data:text/html,${encodeURIComponent(html)}`);
- * webview.run();
+ * denotron.navigate(`data:text/html,${encodeURIComponent(html)}`);
+ * denotron.run();
  * ```
  *
  * @module
  */
 
-export * from "./src/webview.ts";
+export * from "./src/denotron.ts";
 export { preload, unload } from "./src/ffi.ts";

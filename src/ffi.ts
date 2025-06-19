@@ -1,12 +1,12 @@
 import manifest from "../deno.json" with { type: "json" };
 
 import { dlopen, download } from "@denosaurs/plug";
-import type { Webview } from "./webview.ts";
+import type { Denotron } from "./denotron.ts";
 
 const version = manifest.version;
 const cache = Deno.env.get("PLUGIN_URL") === undefined ? "use" : "reloadAll";
 const url = Deno.env.get("PLUGIN_URL") ??
-  `https://github.com/LeandrodaSilva/webview_deno/releases/download/${version}/`;
+  `https://github.com/LeandrodaSilva/denotron/releases/download/${version}/`;
 
 const encoder = new TextEncoder();
 
@@ -39,7 +39,7 @@ let preloaded = false;
  * All active webview instances. This is internally used for automatically
  * destroying all instances once {@link unload} is called.
  */
-export const instances: Webview[] = [];
+export const instances: Denotron[] = [];
 
 /**
  * Loads the `./WebView2Loader.dll` for running on Windows. Removes old version

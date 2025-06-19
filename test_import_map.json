@@ -1,6 +1,6 @@
 {
   "imports": {
-    "@webview/webview": "./mod.ts",
+    "@leproj/denotron": "./mod.ts",
     "@denosaurs/plug": "jsr:@denosaurs/plug@^1.0"
   }
 }
