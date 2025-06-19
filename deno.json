@@ -6,7 +6,8 @@
   "tasks": {
     "build": "deno run -A script/build.ts",
     "run": "deno task build && export PLUGIN_URL=\"./build/\" && deno run -A --unstable-ffi",
-    "run:fast": "export PLUGIN_URL=\"./build/\" && deno run -A --unstable-ffi"
+    "run:fast": "export PLUGIN_URL=\"./build/\" && deno run -A --unstable-ffi",
+    "test": "deno run -A --unstable-ffi --unstable-worker-options"
   },
   "unstable": ["ffi"],
   "fmt": {

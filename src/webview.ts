@@ -1,4 +1,5 @@
 import { encodeCString, instances, lib } from "./ffi.ts";
+import injected from "./injected.ts";
 
 /** Window size hints */
 export type SizeHint = typeof SizeHint[keyof typeof SizeHint];
@@ -68,6 +69,12 @@ export class Webview {
       result: "void";
     }>
   > = new Map();
+  #commands: Array<
+    {
+      command: string;
+      args: Array<number | string | boolean | null | undefined>;
+    }
+  > = [];
 
   /** **UNSAFE**: Highly unsafe API, beware!
    *
@@ -199,6 +206,10 @@ export class Webview {
 
     // Push this instance to the global instances list to automatically destroy
     instances.push(this);
+
+    lib.symbols.webview_init(this.#handle, encodeCString(injected));
+    
+    this.bind("denotronLog", (...args: any) => console.log(...args));
   }
 
   /**
@@ -220,6 +231,11 @@ export class Webview {
    * properly, webview will re-encodeCString it for you.
    */
   navigate(url: URL | string) {
+    this.bind("denotronLoaded",   () => {
+      console.log("Webview loaded, executing commands...");
+      lib.symbols.webview_eval(this.#handle, encodeCString(`window.receiveMessage(${JSON.stringify(this.#commands)});`));
+    });
+    
     lib.symbols.webview_navigate(
       this.#handle,
       encodeCString(url instanceof URL ? url.toString() : url),
@@ -404,5 +420,26 @@ export class Webview {
    */
   inject(source: string) {
     lib.symbols.webview_init(this.#handle, encodeCString(source));
+  }
+
+  click(selector: string) {
+    this.#commands.push({
+      command: `click`,
+      args: [selector],
+    });
+  }
+
+  fill(selector: string, text: string) {
+    this.#commands.push({
+      command: `fill`,
+      args: [selector, text],
+    });
+  }
+
+  see(selector: string) {
+    this.#commands.push({
+      command: `see`,
+      args: [selector],
+    });
   }
 }
