@@ -64,18 +64,17 @@ jobs:
           name: build-${{ matrix.os }}-${{ github.run_number }}
           path: build/*
 
-
       - name: Release Plugin
         uses: softprops/action-gh-release@master
         env:
-           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-           tag_name: "webview_deno release"
-           draft: true
-           files: |
-             build-${{ matrix.os }}-${{ github.run_number }}/libwebview.x86_64.dylib
-             build-${{ matrix.os }}-${{ github.run_number }}/libwebview.aarch64.dylib
-             build-${{ matrix.os }}-${{ github.run_number }}/libwebview.x86_64.so
-             build-${{ matrix.os }}-${{ github.run_number }}/libwebview.aarch64.so
-             build-${{ matrix.os }}-${{ github.run_number }}/webview.dll
-             build-${{ matrix.os }}-${{ github.run_number }}/Webview2Loader.dll
+          tag_name: "webview_deno release"
+          draft: true
+          files: |
+            build-${{ matrix.os }}-${{ github.run_number }}/libwebview.x86_64.dylib
+            build-${{ matrix.os }}-${{ github.run_number }}/libwebview.aarch64.dylib
+            build-${{ matrix.os }}-${{ github.run_number }}/libwebview.x86_64.so
+            build-${{ matrix.os }}-${{ github.run_number }}/libwebview.aarch64.so
+            build-${{ matrix.os }}-${{ github.run_number }}/webview.dll
+            build-${{ matrix.os }}-${{ github.run_number }}/Webview2Loader.dll
