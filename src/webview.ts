@@ -399,7 +399,7 @@ export class Webview {
 
   /**
    * Injects JavaScript code at the initialization of the new page. Every time
-   * the webview will open a the new page - this initialization code will be
+   * the webview will open a new page - this initialization code will be
    * executed. It is guaranteed that code is executed before window.onload.
    */
   inject(source: string) {
