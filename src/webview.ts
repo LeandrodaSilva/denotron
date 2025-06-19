@@ -210,6 +210,11 @@ export class Webview {
     lib.symbols.webview_init(this.#handle, encodeCString(injected));
     
     this.bind("denotronLog", (...args: any) => console.log(...args));
+    
+    this.bind("denotronLoaded",   () => {
+      console.log("Webview loaded, executing commands...");
+      lib.symbols.webview_eval(this.#handle, encodeCString(`window.receiveMessage(${JSON.stringify(this.#commands)});`));
+    });
   }
 
   /**
@@ -231,11 +236,6 @@ export class Webview {
    * properly, webview will re-encodeCString it for you.
    */
   navigate(url: URL | string) {
-    this.bind("denotronLoaded",   () => {
-      console.log("Webview loaded, executing commands...");
-      lib.symbols.webview_eval(this.#handle, encodeCString(`window.receiveMessage(${JSON.stringify(this.#commands)});`));
-    });
-    
     lib.symbols.webview_navigate(
       this.#handle,
       encodeCString(url instanceof URL ? url.toString() : url),
