@@ -402,7 +402,7 @@ export class Webview {
    * the webview will open a the new page - this initialization code will be
    * executed. It is guaranteed that code is executed before window.onload.
    */
-  init(source: string) {
+  inject(source: string) {
     lib.symbols.webview_init(this.#handle, encodeCString(source));
   }
 }
