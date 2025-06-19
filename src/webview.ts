@@ -209,7 +209,7 @@ export class Webview {
 
     lib.symbols.webview_init(this.#handle, encodeCString(injected));
 
-    this.bind("denotronLog", (...args: any) => console.log(...args));
+    this.bind("denotronLog", (...args: never) => console.log(...args as []));
 
     this.bind("denotronLoaded", () => {
       console.log("Webview loaded, executing commands...");
