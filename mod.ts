@@ -16,4 +16,13 @@
  */
 
 export * from "./src/denotron.ts";
-export { preload, unload } from "./src/ffi.ts";
+export { encodeCString, preload, unload } from "./src/ffi.ts";
+export {
+  type Command,
+  type CommandName,
+  DEFAULT_TIMEOUT,
+  DenotronElementNotFoundError,
+  DenotronError,
+  DenotronTimeoutError,
+} from "./src/protocol.ts";
+export { buildInjected, type InjectedOptions } from "./src/injected.ts";

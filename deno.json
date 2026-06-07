@@ -1,17 +1,25 @@
 {
   "name": "@leproj/denotron",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "exports": "./mod.ts",
   "lock": false,
   "tasks": {
     "build": "deno run -A script/build.ts",
     "run": "deno task build && export PLUGIN_URL=\"./build/\" && deno run -A --unstable-ffi",
     "run:fast": "export PLUGIN_URL=\"./build/\" && deno run -A --unstable-ffi",
-    "test": "deno run -A --unstable-ffi --unstable-worker-options"
+    "test": "deno test -A --unstable-ffi tests/protocol_test.ts tests/injected_test.ts",
+    "test:e2e": "DENOTRON_E2E=1 PLUGIN_URL=./build/ deno test -A --unstable-ffi tests/e2e/",
+    "test:doc": "PLUGIN_URL=./build/ deno test --doc -A --unstable-ffi mod.ts src/"
   },
   "unstable": ["ffi"],
   "fmt": {
     "exclude": ["webview/"]
   },
-  "imports": { "@denosaurs/plug": "jsr:@denosaurs/plug@^1.0" }
+  "lint": {
+    "exclude": ["webview/", "examples/", "script/"]
+  },
+  "imports": {
+    "@denosaurs/plug": "jsr:@denosaurs/plug@^1.0",
+    "@std/assert": "jsr:@std/assert@^1.0"
+  }
 }

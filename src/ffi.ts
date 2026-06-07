@@ -16,7 +16,7 @@ const encoder = new TextEncoder();
  * @param value The intput string
  * @returns A null terminated `Uint8Array` of the input string
  */
-export function encodeCString(value: string) {
+export function encodeCString(value: string): Uint8Array<ArrayBuffer> {
   return encoder.encode(value + "\0");
 }
 
@@ -126,10 +126,10 @@ export const lib = await dlopen(
       parameters: ["pointer"],
       result: "void",
     },
-    // "webview_dispatch": {
-    //   parameters: ["pointer", { function: { parameters: ["pointer", "pointer"], result: "void" } }, "pointer"],
-    //   result: "void",
-    // },
+    "webview_dispatch": {
+      parameters: ["pointer", "function", "pointer"],
+      result: "void",
+    },
     "webview_get_window": {
       parameters: ["pointer"],
       result: "pointer",
