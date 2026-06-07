@@ -1,5 +1,39 @@
 import { encodeCString, instances, lib } from "./ffi.ts";
-import injected from "./injected.ts";
+import { buildInjected } from "./injected.ts";
+import {
+  type Command,
+  type CommandName,
+  createCommandFactory,
+  decodeResult,
+  DEFAULT_TIMEOUT,
+  DenotronError,
+} from "./protocol.ts";
+
+/** A pending automation command awaiting its result from the page runtime. */
+interface Pending {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+}
+
+/** Options controlling how {@link Denotron.scroll} brings an element into view. */
+export interface ScrollOptions {
+  /** Scrolling animation behavior. */
+  behavior?: "auto" | "smooth" | "instant";
+  /** Vertical alignment of the element within the scroll viewport. */
+  block?: "start" | "center" | "end" | "nearest";
+  /** Horizontal alignment of the element within the scroll viewport. */
+  inline?: "start" | "center" | "end" | "nearest";
+}
+
+/** Options for {@link Denotron.run}. */
+export interface RunOptions {
+  /**
+   * When true, the native loop terminates automatically once every queued
+   * automation command has resolved. Useful for headless-style scripts that
+   * should not keep the window open after the work is done.
+   */
+  closeWhenIdle?: boolean;
+}
 
 /** Window size hints */
 export type SizeHint = typeof SizeHint[keyof typeof SizeHint];
@@ -33,8 +67,8 @@ export interface Size {
  *
  * ### Local
  *
- * ```ts
- * import { Webview } from "../mod.ts";
+ * ```ts ignore
+ * import { Denotron } from "../mod.ts";
  *
  * const html = `
  *   <html>
@@ -44,7 +78,7 @@ export interface Size {
  *   </html>
  * `;
  *
- * const webview = new Webview();
+ * const webview = new Denotron();
  *
  * webview.navigate(`data:text/html,${encodeURIComponent(html)}`);
  * webview.run();
@@ -52,10 +86,10 @@ export interface Size {
  *
  * ### Remote
  *
- * ```ts
- * import { Webview } from "../mod.ts";
+ * ```ts ignore
+ * import { Denotron } from "../mod.ts";
  *
- * const webview = new Webview();
+ * const webview = new Denotron();
  * webview.navigate("https://deno.land/");
  * webview.run();
  * ```
@@ -69,12 +103,18 @@ export class Denotron {
       result: "void";
     }>
   > = new Map();
-  #commands: Array<
-    {
-      command: string;
-      args: Array<number | string | boolean | null | undefined>;
-    }
-  > = [];
+  /** Commands queued before the page signalled it was ready. */
+  #queue: Command[] = [];
+  /** In-flight commands awaiting a result, keyed by command id. */
+  #pending: Map<number, Pending> = new Map();
+  /** Monotonic command factory shared by all automation methods. */
+  #nextCommand = createCommandFactory();
+  /** Whether the current document has signalled readiness. */
+  #ready = false;
+  /** Whether to terminate the native loop once {@link #pending} drains. */
+  #closeWhenIdle = false;
+  /** The injected runtime source for this instance. */
+  #injected: string;
 
   /** **UNSAFE**: Highly unsafe API, beware!
    *
@@ -100,10 +140,10 @@ export class Denotron {
    *
    * ## Example
    *
-   * ```ts
-   * import { Webview, SizeHint } from "../mod.ts";
+   * ```ts ignore
+   * import { Denotron, SizeHint } from "../mod.ts";
    *
-   * const webview = new Webview();
+   * const webview = new Denotron();
    * webview.navigate("https://deno.land/");
    *
    * // Change from the default size to a small fixed window
@@ -127,10 +167,10 @@ export class Denotron {
    *
    * ## Example
    *
-   * ```ts
-   * import { Webview } from "../mod.ts";
+   * ```ts ignore
+   * import { Denotron } from "../mod.ts";
    *
-   * const webview = new Webview();
+   * const webview = new Denotron();
    * webview.navigate("https://deno.land/");
    *
    * // Set the window title to "Hello world!"
@@ -155,11 +195,11 @@ export class Denotron {
    *
    * ## Example
    *
-   * ```ts
-   * import { Webview, SizeHint } from "../mod.ts";
+   * ```ts ignore
+   * import { Denotron, SizeHint } from "../mod.ts";
    *
    * // Create a new webview and change from the default size to a small fixed window
-   * const webview = new Webview(true, {
+   * const webview = new Denotron(true, {
    *   width: 200,
    *   height: 200,
    *   hint: SizeHint.FIXED
@@ -207,19 +247,36 @@ export class Denotron {
     // Push this instance to the global instances list to automatically destroy
     instances.push(this);
 
-    lib.symbols.webview_init(this.#handle, encodeCString(injected));
+    const debug = debugOrHandle === true;
+    this.#injected = buildInjected({ overlay: debug });
+    lib.symbols.webview_init(this.#handle, encodeCString(this.#injected));
 
+    // Logging bridge from the page runtime to the Deno console.
     this.bind("denotronLog", (...args: never) => console.log(...args as []));
 
-    this.bind("denotronLoaded", () => {
-      console.log("Webview loaded, executing commands...");
-      lib.symbols.webview_eval(
-        this.#handle,
-        encodeCString(
-          `window.receiveMessage(${JSON.stringify(this.#commands)});`,
-        ),
-      );
+    // The page calls this once it is ready; flush any queued commands.
+    this.bind("denotronReady", () => {
+      this.#ready = true;
+      if (this.#queue.length > 0) {
+        const commands = this.#queue;
+        this.#queue = [];
+        this.#send(commands);
+      }
     });
+
+    // Result channel: the page runtime resolves commands by id through this.
+    this.bind(
+      "__denotronResolve",
+      (id: number, status: number, payload: unknown) => {
+        const pending = this.#pending.get(id);
+        if (!pending) return;
+        this.#pending.delete(id);
+        const decoded = decodeResult(status, payload);
+        if (decoded instanceof Error) pending.reject(decoded);
+        else pending.resolve(decoded);
+        this.#maybeClose();
+      },
+    );
   }
 
   /**
@@ -227,8 +284,17 @@ export class Denotron {
    * resources.
    */
   destroy() {
-    for (const callback of Object.keys(this.#callbacks)) {
-      this.unbind(callback);
+    // Reject any commands that never received a result so awaiters do not hang.
+    for (const pending of this.#pending.values()) {
+      pending.reject(
+        new DenotronError("Webview destroyed before command resolved"),
+      );
+    }
+    this.#pending.clear();
+    this.#queue = [];
+
+    for (const name of this.#callbacks.keys()) {
+      this.unbind(name);
     }
     lib.symbols.webview_terminate(this.#handle);
     lib.symbols.webview_destroy(this.#handle);
@@ -250,10 +316,37 @@ export class Denotron {
   /**
    * Runs the main event loop until it's terminated. After this function exits
    * the webview is automatically destroyed.
+   *
+   * This call **blocks** the Deno thread until the window closes (or, with
+   * {@link RunOptions.closeWhenIdle}, until every queued automation command has
+   * resolved). Because the loop blocks, automation command Promises returned by
+   * {@link Denotron.see}, {@link Denotron.getText} and friends settle while
+   * `run` is executing; `await` them after `run` returns.
+   *
+   * ## Example
+   *
+   * ```ts ignore
+   * import { Denotron } from "../mod.ts";
+   *
+   * const webview = new Denotron();
+   * webview.navigate("https://deno.land/");
+   * const heading = webview.getText("h1");
+   * webview.run({ closeWhenIdle: true });
+   * console.log(await heading);
+   * ```
    */
-  run(): void {
+  run(options: RunOptions = {}): void {
+    this.#closeWhenIdle = options.closeWhenIdle ?? false;
     lib.symbols.webview_run(this.#handle);
     this.destroy();
+  }
+
+  /**
+   * Terminates the native event loop, causing a blocked {@link Denotron.run}
+   * call to return.
+   */
+  terminate(): void {
+    lib.symbols.webview_terminate(this.#handle);
   }
 
   /**
@@ -318,8 +411,8 @@ export class Denotron {
    * webview JavaScript caller
    *
    * ## Example
-   * ```ts
-   * import { Webview } from "../mod.ts";
+   * ```ts ignore
+   * import { Denotron } from "../mod.ts";
    *
    * const html = `
    *   <html>
@@ -332,7 +425,7 @@ export class Denotron {
    *   </html>
    * `;
    *
-   * const webview = new Webview();
+   * const webview = new Denotron();
    *
    * webview.navigate(`data:text/html,${encodeURIComponent(html)}`);
    *
@@ -411,7 +504,7 @@ export class Denotron {
   /**
    * Evaluates arbitrary JavaScript code. Evaluation happens asynchronously,
    * also the result of the expression is ignored. Use
-   * {@link Webview.bind bindings} if you want to receive notifications about
+   * {@link Denotron.bind bindings} if you want to receive notifications about
    * the results of the evaluation.
    */
   eval(source: string) {
@@ -427,24 +520,201 @@ export class Denotron {
     lib.symbols.webview_init(this.#handle, encodeCString(source));
   }
 
-  click(selector: string) {
-    this.#commands.push({
-      command: `click`,
-      args: [selector],
-    });
+  // ---------------------------------------------------------------------------
+  // Automation API
+  //
+  // Each method enqueues a command for the page runtime and returns a Promise
+  // that resolves with the command's result. Because {@link Denotron.run}
+  // blocks, await these Promises *after* `run` returns (see its docs).
+  // ---------------------------------------------------------------------------
+
+  /** Clicks the first element matching `selector`, waiting for it to appear. */
+  click(selector: string, options: { timeout?: number } = {}): Promise<void> {
+    return this.#enqueue("click", [selector], options.timeout) as Promise<void>;
   }
 
-  fill(selector: string, text: string) {
-    this.#commands.push({
-      command: `fill`,
-      args: [selector, text],
-    });
+  /**
+   * Types `text` into `selector`, dispatching realistic input events.
+   *
+   * @param options.clear Empty the field before typing.
+   * @param options.delay Milliseconds to wait between keystrokes.
+   */
+  type(
+    selector: string,
+    text: string,
+    options: { clear?: boolean; delay?: number; timeout?: number } = {},
+  ): Promise<void> {
+    return this.#enqueue(
+      "type",
+      [selector, text, { clear: options.clear, delay: options.delay }],
+      options.timeout,
+    ) as Promise<void>;
   }
 
-  see(selector: string) {
-    this.#commands.push({
-      command: `see`,
-      args: [selector],
+  /**
+   * Fills `selector` with `text`, clearing it first.
+   *
+   * Kept for backwards compatibility; equivalent to
+   * `type(selector, text, { clear: true })`.
+   */
+  fill(selector: string, text: string): Promise<void> {
+    return this.type(selector, text, { clear: true });
+  }
+
+  /** Dispatches a keyboard event for `key` on `selector`. */
+  press(
+    selector: string,
+    key: string,
+    options: { timeout?: number } = {},
+  ): Promise<void> {
+    return this.#enqueue("press", [selector, key], options.timeout) as Promise<
+      void
+    >;
+  }
+
+  /** Selects one or more option values in a `<select>` element. */
+  select(
+    selector: string,
+    value: string | string[],
+    options: { timeout?: number } = {},
+  ): Promise<void> {
+    return this.#enqueue(
+      "select",
+      [selector, value],
+      options.timeout,
+    ) as Promise<void>;
+  }
+
+  /** Sets the checked state of a checkbox or radio input. */
+  check(
+    selector: string,
+    checked = true,
+    options: { timeout?: number } = {},
+  ): Promise<void> {
+    return this.#enqueue(
+      "check",
+      [selector, checked],
+      options.timeout,
+    ) as Promise<void>;
+  }
+
+  /** Scrolls `selector` into view. */
+  scroll(
+    selector: string,
+    options: ScrollOptions & { timeout?: number } = {},
+  ): Promise<void> {
+    const { timeout, ...scroll } = options;
+    return this.#enqueue("scroll", [selector, scroll], timeout) as Promise<
+      void
+    >;
+  }
+
+  /** Waits for `selector` and resolves with its text content. */
+  see(selector: string, options: { timeout?: number } = {}): Promise<string> {
+    return this.#enqueue("see", [selector], options.timeout) as Promise<string>;
+  }
+
+  /** Resolves with the text content of `selector`. */
+  getText(
+    selector: string,
+    options: { timeout?: number } = {},
+  ): Promise<string> {
+    return this.#enqueue("getText", [selector], options.timeout) as Promise<
+      string
+    >;
+  }
+
+  /** Resolves with the `value` of a form control matching `selector`. */
+  getValue(
+    selector: string,
+    options: { timeout?: number } = {},
+  ): Promise<string> {
+    return this.#enqueue("getValue", [selector], options.timeout) as Promise<
+      string
+    >;
+  }
+
+  /** Resolves with an attribute value, or `null` if the attribute is absent. */
+  getAttribute(
+    selector: string,
+    name: string,
+    options: { timeout?: number } = {},
+  ): Promise<string | null> {
+    return this.#enqueue(
+      "getAttribute",
+      [selector, name],
+      options.timeout,
+    ) as Promise<string | null>;
+  }
+
+  /** Resolves with whether any element currently matches `selector`. */
+  exists(selector: string): Promise<boolean> {
+    return this.#enqueue("exists", [selector]) as Promise<boolean>;
+  }
+
+  /** Resolves with the number of elements matching `selector`. */
+  count(selector: string): Promise<number> {
+    return this.#enqueue("count", [selector]) as Promise<number>;
+  }
+
+  /**
+   * Waits for `selector` to reach the given state.
+   *
+   * @param options.state `"visible"` (default), `"attached"` or `"hidden"`.
+   */
+  waitFor(
+    selector: string,
+    options: { state?: "visible" | "attached" | "hidden"; timeout?: number } =
+      {},
+  ): Promise<void> {
+    return this.#enqueue(
+      "waitFor",
+      [selector, { state: options.state }],
+      options.timeout,
+    ) as Promise<void>;
+  }
+
+  /**
+   * Evaluates `code` in the page and resolves with its (JSON-serializable)
+   * result. Unlike {@link Denotron.eval}, this returns the value to Deno-land.
+   */
+  evalInPage<T = unknown>(
+    code: string,
+    options: { timeout?: number } = {},
+  ): Promise<T> {
+    return this.#enqueue("evalInPage", [code], options.timeout) as Promise<T>;
+  }
+
+  /** Registers a pending command and dispatches or queues it for the page. */
+  #enqueue(
+    command: CommandName,
+    args: unknown[],
+    timeout = DEFAULT_TIMEOUT,
+  ): Promise<unknown> {
+    const cmd = this.#nextCommand(command, args, timeout);
+    const promise = new Promise<unknown>((resolve, reject) => {
+      this.#pending.set(cmd.id, { resolve, reject });
     });
+    if (this.#ready) this.#send([cmd]);
+    else this.#queue.push(cmd);
+    return promise;
+  }
+
+  /** Sends commands to the page runtime for sequential execution. */
+  #send(commands: Command[]): void {
+    lib.symbols.webview_eval(
+      this.#handle,
+      encodeCString(`window.__denotronExec(${JSON.stringify(commands)});`),
+    );
+  }
+
+  /** Terminates the loop when idle, if {@link RunOptions.closeWhenIdle} was set. */
+  #maybeClose(): void {
+    if (
+      this.#closeWhenIdle && this.#ready && this.#pending.size === 0 &&
+      this.#queue.length === 0
+    ) {
+      this.terminate();
+    }
   }
 }

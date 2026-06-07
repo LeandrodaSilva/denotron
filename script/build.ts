@@ -33,11 +33,14 @@ switch (Deno.build.os) {
     break;
   }
   case "linux": {
+    // The WebKitGTK API version can be overridden for distros that only ship
+    // an older package (e.g. `4.1`). Defaults to `6.0`.
+    const webkitApi = Deno.env.get("WEBVIEW_WEBKITGTK_API") ?? "6.0";
     $.cd("webview");
     await $`export PATH=/usr/lib/llvm14/bin/:/usr/lib/llvm-14/bin/:/usr/lib64/llvm15/bin/:$PATH`;
     await $`cmake -G Ninja -B build -S . \
             -D CMAKE_BUILD_TYPE=Release \
-            -D WEBVIEW_WEBKITGTK_API=6.0 \
+            -D WEBVIEW_WEBKITGTK_API=${webkitApi} \
             -DWEBVIEW_ENABLE_CHECKS=false \
             -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/host-llvm.cmake \
             -DWEBVIEW_USE_CLANG_TIDY=OFF \
