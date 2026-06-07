@@ -1,78 +1,56 @@
 /**
- * End-to-end automation tests that open a real native webview.
+ * End-to-end automation test that opens a real native webview.
  *
- * These are gated behind the `DENOTRON_E2E=1` environment variable because they
- * require a display (use `xvfb-run` on headless CI) and a locally built native
- * library (`deno task build`, with `PLUGIN_URL=./build/`).
+ * Gated behind `DENOTRON_E2E=1` because it requires a display (use `xvfb-run`
+ * on headless CI) and a locally built native library (`deno task build`).
+ *
+ * The actual automation runs in a `deno run` subprocess (see
+ * `fixture_automation.ts`): driving a native WebKit/GTK webview to completion
+ * inside the `deno test` runner aborts the process on teardown, whereas a plain
+ * `deno run` exits cleanly. The test asserts on the fixture's printed results.
  */
-import { assertEquals, assertInstanceOf } from "@std/assert";
-import { Denotron, DenotronElementNotFoundError } from "../../mod.ts";
+import { assertEquals } from "@std/assert";
 
 const enabled = Deno.env.get("DENOTRON_E2E") === "1";
-
-const PAGE =
-  `<!doctype html><html><head><title>Denotron E2E</title></head><body>
-<h1 id="title">Hello Denotron</h1>
-<input id="name" value="" />
-<select id="color"><option value="r">Red</option><option value="g">Green</option></select>
-<input type="checkbox" id="agree" />
-<button id="btn" onclick="document.getElementById('title').textContent='Clicked!'">Go</button>
-<p class="item">a</p><p class="item">b</p>
-<div id="late"></div>
-<script>
-  setTimeout(function () {
-    document.getElementById('late').innerHTML = '<span id="appeared">now</span>';
-  }, 300);
-</script>
-</body></html>`;
 
 Deno.test({
   name: "automation: ordered queue resolves values, waits, and times out",
   ignore: !enabled,
-  // The native callbacks keep ops/resources open until run() returns.
-  sanitizeOps: false,
-  sanitizeResources: false,
   async fn() {
-    const wv = new Denotron(false);
-    wv.navigate("data:text/html," + encodeURIComponent(PAGE));
+    const fixture =
+      new URL("./fixture_automation.ts", import.meta.url).pathname;
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", "--unstable-ffi", fixture],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const { code, stdout, stderr } = await command.output();
+    const out = new TextDecoder().decode(stdout);
+    const err = new TextDecoder().decode(stderr);
 
-    // Flat, ordered queue: executes sequentially in the page before run returns.
-    const title = wv.see("#title");
-    const hasName = wv.exists("#name");
-    const hasNope = wv.exists("#nope");
-    const items = wv.count(".item");
-    wv.fill("#name", "denotron");
-    const value = wv.getValue("#name");
-    wv.check("#agree");
-    const checked = wv.evalInPage<boolean>(
-      "document.getElementById('agree').checked",
-    );
-    wv.select("#color", "g");
-    const selected = wv.getValue("#color");
-    wv.click("#btn");
-    const afterClick = wv.getText("#title");
-    const attr = wv.getAttribute("#name", "id");
-    const evald = wv.evalInPage<number>("1 + 2 + 3");
-    wv.waitFor("#appeared");
-    const waited = wv.getText("#appeared");
-    const timedOut = wv.see("#missing", { timeout: 500 }).then(
-      () => null,
-      (e) => e,
-    );
+    if (code !== 0) {
+      throw new Error(
+        `fixture exited with ${code}\nstdout:\n${out}\nstderr:\n${err}`,
+      );
+    }
 
-    wv.run({ closeWhenIdle: true });
+    const line = out.split("\n").find((l) => l.startsWith("RESULT="));
+    if (!line) throw new Error(`no RESULT line in fixture output:\n${out}`);
+    const result = JSON.parse(line.slice("RESULT=".length));
 
-    assertEquals(await title, "Hello Denotron");
-    assertEquals(await hasName, true);
-    assertEquals(await hasNope, false);
-    assertEquals(await items, 2);
-    assertEquals(await value, "denotron");
-    assertEquals(await checked, true);
-    assertEquals(await selected, "g");
-    assertEquals(await afterClick, "Clicked!");
-    assertEquals(await attr, "name");
-    assertEquals(await evald, 6);
-    assertEquals(await waited, "now");
-    assertInstanceOf(await timedOut, DenotronElementNotFoundError);
+    assertEquals(result, {
+      title: "Hello Denotron",
+      hasName: true,
+      hasNope: false,
+      items: 2,
+      value: "denotron",
+      checked: true,
+      selected: "g",
+      afterClick: "Clicked!",
+      attr: "name",
+      evald: 6,
+      waited: "now",
+      timedOut: "DenotronElementNotFoundError",
+    });
   },
 });
